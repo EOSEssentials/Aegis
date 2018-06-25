@@ -3,7 +3,6 @@
 #include <eosiolib/singleton.hpp>
 #include <eosiolib/time.hpp>
 
-using eosio::block_timestamp;
 using eosio::currency;
 using eosio::asset;
 using eosio::action;
@@ -15,14 +14,46 @@ class aegis : public eosio::contract {
 
 public:
     aegis(action_name self) : contract(self), _patrons(_self, _self), _history(_self, _self), _global(_self, _self) {}
-    const uint32_t SEVEN_DAYS = 60*60*7;
+    const int64_t WEEK = 60*60*7;
+    const int64_t MIN_PAYMENT = 0.1000;
+    const int64_t PERCENTAGE_PER_WEEK = 10;
 
     //@abi action
     void claim() {
         eosio_assert(is_account(_global.get().receiver), "Not receiver set");
         require_auth(_global.get().receiver);
-        eosio_assert((time_point_sec(now()) > (_global.get().last_claim + SEVEN_DAYS)), "You must wait 7 days to claim again");
-        // TODO get 10% of money + update tables (current money / all time money)
+        eosio_assert((time_point_sec(now()) > (_global.get().last_claim + WEEK)), "You must wait 7 days to claim again");
+        asset total_amount = asset();
+
+        for( const auto& itr : _patrons ) {
+            asset patron_amount = asset();
+
+            if (itr.balance.amount <= MIN_PAYMENT) {
+                patron_amount = itr.balance;
+                _patrons.erase(itr);
+            } else {
+                _patrons.modify( itr, 0, [&]( auto& acnt ) {
+                    patron_amount = asset(acnt.balance.amount * PERCENTAGE_PER_WEEK/100);
+                    acnt.balance -= patron_amount;
+                });
+            }
+
+            auto itr_history = _history.find(itr.name);
+            if( itr_history == _history.end() ) {
+                itr_history = _history.emplace(_self, [&](auto& acnt){
+                    acnt.name = itr.name;
+                    acnt.balance = patron_amount;
+                });
+            }
+
+            _history.modify( itr_history, 0, [&]( auto& acnt ) {
+                acnt.balance += patron_amount;
+            });
+        }
+
+        action(permission_level{ _self, N(active) }, N(eosio.token), N(transfer), std::make_tuple(_self, _global.get().receiver, total_amount, std::string("Refund Aegis"))
+        ).send();
+
         _global.set(aegis_state{_global.get().receiver, time_point_sec(now())}, 0);
     }
 
@@ -65,7 +96,7 @@ private:
     void transfer_received(const currency::transfer &transfer, const account_name code) {
         eosio_assert( transfer.quantity.symbol == CORE_SYMBOL, "only core token allowed" );
         eosio_assert( transfer.quantity.is_valid(), "invalid quantity" );
-        eosio_assert( transfer.quantity.amount > 0.1000, "must be higher than 0.1000 EOS" );
+        eosio_assert( transfer.quantity.amount > MIN_PAYMENT, "must be higher than 0.1000 EOS" );
 
         if (transfer.to != _self) {
             return;
