@@ -9,17 +9,21 @@ using eosio::asset;
 using eosio::action;
 using eosio::unpack_action_data;
 using eosio::permission_level;
+using eosio::time_point_sec;
 
 class aegis : public eosio::contract {
 
 public:
     aegis(action_name self) : contract(self), _patrons(_self, _self), _history(_self, _self), _global(_self, _self) {}
+    const uint32_t SEVEN_DAYS = 60*60*7;
 
     //@abi action
     void claim() {
         eosio_assert(is_account(_global.get().receiver), "Not receiver set");
         require_auth(_global.get().receiver);
+        eosio_assert((time_point_sec(now()) > (_global.get().last_claim + SEVEN_DAYS)), "You must wait 7 days to claim again");
         // TODO get 10% of money + update tables (current money / all time money)
+        _global.set(aegis_state{_global.get().receiver, time_point_sec(now())}, 0);
     }
 
     //@abi action
@@ -38,27 +42,27 @@ public:
     }
 
     //@abi action
-    void setReceiver(const account_name receiver)
+    void setreceiver(const account_name receiver)
     {
         require_auth(_self);
-        // TODO add receiver
+        _global.set(aegis_state{receiver, _global.get().last_claim}, 0);
     }
 
     void apply(const account_name contract, const account_name action) {
 
         if (action == N(transfer)) {
-            transferReceived(unpack_action_data<currency::transfer>(), contract);
+            transfer_received(unpack_action_data<currency::transfer>(), contract);
             return;
         }
 
         auto &thiscontract = *this;
         switch (action) {
-            EOSIO_API(aegis, (refund)(claim)(setReceiver))
+            EOSIO_API(aegis, (refund)(claim)(setreceiver))
         };
     }
 
 private:
-    void transferReceived(const currency::transfer &transfer, const account_name code) {
+    void transfer_received(const currency::transfer &transfer, const account_name code) {
         eosio_assert( transfer.quantity.symbol == CORE_SYMBOL, "only core token allowed" );
         eosio_assert( transfer.quantity.is_valid(), "invalid quantity" );
         eosio_assert( transfer.quantity.amount > 0.1000, "must be higher than 0.1000 EOS" );
@@ -80,7 +84,7 @@ private:
     }
 
     //@abi table patrons i64
-    //@abi table patrons_all_times i64
+    //@abi table history i64
     struct patron {
         account_name name;
         asset balance;
@@ -92,7 +96,7 @@ private:
 
     struct aegis_state {
         account_name receiver;
-        block_timestamp last_claim;
+        time_point_sec last_claim = time_point_sec(0);
         EOSLIB_SERIALIZE(aegis_state, (receiver)(last_claim))
     };
 
@@ -114,4 +118,4 @@ void apply(uint64_t receiver, uint64_t code, uint64_t action) {
 }
 }
 
-// EOSIO_ABI(aegis, (refund)(claim)(setReceiver))
+// EOSIO_ABI(aegis, (refund)(claim)(setreceiver))
