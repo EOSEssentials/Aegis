@@ -17,7 +17,7 @@ class aegis : public eosio::contract {
 
 public:
     aegis(action_name self) : contract(self), _patrons(_self, _self), _history(_self, _self), _global(_self, _self) {}
-    const int64_t WEEK = 60*60*7;
+    const int64_t WEEK = 60*60*24*7;
     const int64_t MIN_PAYMENT = 1000;
     const int64_t PERCENTAGE_PER_WEEK = 10;
 
@@ -35,7 +35,9 @@ public:
 
             if (itr.balance.amount <= MIN_PAYMENT) {
                 patron_amount = itr.balance;
-                _patrons.erase(itr);
+                _patrons.modify( itr, 0, [&]( auto& acnt ) {
+                    acnt.balance = asset(0);
+                });
             } else {
                 _patrons.modify( itr, 0, [&]( auto& acnt ) {
                     patron_amount = asset(acnt.balance.amount * PERCENTAGE_PER_WEEK/100);
@@ -46,7 +48,7 @@ public:
             auto itr_history = _history.find(patron_name);
             if( itr_history == _history.end() ) {
                 itr_history = _history.emplace(_self, [&](auto& acnt){
-                    acnt.name = itr.name;
+                    acnt.name = patron_name;
                     acnt.balance = patron_amount;
                 });
             } else {
@@ -109,11 +111,12 @@ private:
     void transfer_received(const currency::transfer &transfer, const account_name code) {
         eosio_assert( transfer.quantity.symbol == CORE_SYMBOL, "only core token allowed" );
         eosio_assert( transfer.quantity.is_valid(), "invalid quantity" );
-        eosio_assert( transfer.quantity.amount > MIN_PAYMENT, "must be higher than 0.1000" );
 
         if (transfer.to != _self) {
             return;
         }
+
+        eosio_assert( transfer.quantity.amount > MIN_PAYMENT, "must be higher than 0.1000" );
 
         auto itr = _patrons.find(transfer.from);
         if( itr == _patrons.end() ) {
