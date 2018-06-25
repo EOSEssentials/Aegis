@@ -2,6 +2,7 @@
 #include <eosiolib/currency.hpp>
 #include <eosiolib/singleton.hpp>
 #include <eosiolib/time.hpp>
+#include <eosio.token/eosio.token.hpp>
 
 using eosio::currency;
 using eosio::asset;
@@ -23,12 +24,14 @@ public:
     //@abi action
     void claim() {
         eosio_assert(is_account(_global.get().receiver), "Not receiver set");
+        eosio_assert(_global.exists(), "Not configuration for receiver");
         require_auth(_global.get().receiver);
         eosio_assert((time_point_sec(now()) > (_global.get().last_claim + WEEK)), "You must wait 7 days to claim again");
         asset total_amount = asset();
 
         for( const auto& itr : _patrons ) {
             asset patron_amount = asset();
+            const account_name patron_name = itr.name;
 
             if (itr.balance.amount <= MIN_PAYMENT) {
                 patron_amount = itr.balance;
@@ -40,23 +43,25 @@ public:
                 });
             }
 
-            auto itr_history = _history.find(itr.name);
+            auto itr_history = _history.find(patron_name);
             if( itr_history == _history.end() ) {
                 itr_history = _history.emplace(_self, [&](auto& acnt){
                     acnt.name = itr.name;
                     acnt.balance = patron_amount;
                 });
+            } else {
+                _history.modify( itr_history, 0, [&]( auto& acnt ) {
+                    acnt.balance += patron_amount;
+                });
             }
 
-            _history.modify( itr_history, 0, [&]( auto& acnt ) {
-                acnt.balance += patron_amount;
-            });
+            total_amount += patron_amount;
         }
 
-        action(permission_level{ _self, N(active) }, N(eosio.token), N(transfer), std::make_tuple(_self, _global.get().receiver, total_amount, std::string("Refund Aegis"))
-        ).send();
+        INLINE_ACTION_SENDER(eosio::token, transfer)( N(eosio.token), {{_self,N(active)}},
+                                                      {_self, _global.get().receiver, total_amount, std::string("Claim Aegis")} );
 
-        _global.set(aegis_state{_global.get().receiver, time_point_sec(now())}, 0);
+        _global.set(aegis_state{_global.get().receiver, time_point_sec(now())}, _self);
     }
 
     //@abi action
@@ -68,9 +73,10 @@ public:
             eosio_assert( false, "Patron does not exist" );
         }
 
-        action(permission_level{ _self, N(active) }, N(eosio.token), N(transfer), std::make_tuple(_self, itr->name, itr->balance, std::string("Refund Aegis"))
-        ).send();
+        eosio_assert((itr->balance.amount > 0), "Patron has nothing to refund" );
 
+        INLINE_ACTION_SENDER(eosio::token, transfer)( N(eosio.token), {{_self,N(active)}},
+                                                   {_self, itr->name, itr->balance, std::string("Refund Aegis")} );
         _patrons.erase(itr);
     }
 
@@ -78,7 +84,12 @@ public:
     void setreceiver(const account_name receiver)
     {
         require_auth(_self);
-        _global.set(aegis_state{receiver, _global.get().last_claim}, 0);
+        eosio_assert(is_account(receiver), "Receiver does not exist");
+        if (_global.exists()) {
+            _global.set(aegis_state{receiver, _global.get().last_claim}, _self);
+        } else {
+            _global.set(aegis_state{receiver, time_point_sec(0)}, _self);
+        }
     }
 
     void apply(const account_name contract, const account_name action) {
@@ -95,14 +106,10 @@ public:
     }
 
 private:
-    void create_or_edit() {
-
-    }
-
     void transfer_received(const currency::transfer &transfer, const account_name code) {
         eosio_assert( transfer.quantity.symbol == CORE_SYMBOL, "only core token allowed" );
         eosio_assert( transfer.quantity.is_valid(), "invalid quantity" );
-        eosio_assert( transfer.quantity.amount > MIN_PAYMENT, "must be higher than 0.1000 EOS" );
+        eosio_assert( transfer.quantity.amount > MIN_PAYMENT, "must be higher than 0.1000" );
 
         if (transfer.to != _self) {
             return;
