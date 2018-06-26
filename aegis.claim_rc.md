@@ -9,7 +9,7 @@ Implied parameters:
 * `account_name` (name of the party invoking and signing the contract)
 
 ### Intent
-INTENT. The intention of the author and the invoker of this contract is to claim a 10% of the budget set by patrons per week.
+INTENT. The intention of the author and the invoker of this contract is to claim a 10% of the budget set by patrons per week to the receiver. It shall have no other effect.
 
 ### Term
 TERM. This Contract expires at the conclusion of code execution.
