@@ -33,7 +33,18 @@
           "type": "name"
         }
       ]
-    }
+    },{
+        "name": "aegis_state",
+        "base": "",
+        "fields": [{
+            "name": "receiver",
+            "type": "name"
+          },{
+            "name": "last_claim",
+            "type": "time_point_sec"
+          }
+        ]
+      }
   ],
   "actions": [{
       "name": "claim",
@@ -69,6 +80,13 @@
         "name"
       ],
       "type": "patron"
+    },
+    {
+      "name": "global",
+      "type": "aegis_state",
+      "index_type": "i64",
+      "key_names" : [],
+      "key_types" : []
     }
   ],
   "ricardian_clauses": [{

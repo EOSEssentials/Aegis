@@ -17,7 +17,7 @@ class aegis : public eosio::contract {
 
 public:
     aegis(action_name self) : contract(self), _patrons(_self, _self), _history(_self, _self), _global(_self, _self) {}
-    const int64_t WEEK = 60*60*24*7;
+    const uint32_t WEEK = 60*60*24*7;
     const int64_t MIN_PAYMENT = 1000;
     const int64_t PERCENTAGE_PER_WEEK = 10;
 
@@ -111,6 +111,7 @@ private:
     void transfer_received(const currency::transfer &transfer, const account_name code) {
         eosio_assert( transfer.quantity.symbol == CORE_SYMBOL, "only core token allowed" );
         eosio_assert( transfer.quantity.is_valid(), "invalid quantity" );
+        eosio_assert( code == N(eosio.token), "invalid contract" );
 
         if (transfer.to != _self) {
             return;
@@ -141,9 +142,10 @@ private:
         EOSLIB_SERIALIZE(patron, (name)(balance))
     };
 
+    //@abi table global i64
     struct aegis_state {
         account_name receiver;
-        time_point_sec last_claim = time_point_sec(0);
+        time_point_sec last_claim;
         EOSLIB_SERIALIZE(aegis_state, (receiver)(last_claim))
     };
 
